@@ -12,6 +12,7 @@
     font-family: 'Segoe UI', sans-serif;
     height: 100vh;
     width: 100vw;
+    touch-action: none;
   }
 
   #inicio {
@@ -96,6 +97,7 @@
     position: absolute;
     inset: 0;
     display: block;
+    touch-action: none;
   }
 
   .estrella-cursor {
@@ -204,6 +206,23 @@
     box-shadow: 0 0 28px rgba(214,139,255,0.6);
   }
 
+  #botonGiroscopio {
+    position: fixed;
+    bottom: 26px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 10px 20px;
+    border: none;
+    border-radius: 50px;
+    background: rgba(160,107,255,0.18);
+    border: 1px solid rgba(214,139,255,0.5);
+    color: #f5d0ff;
+    font-size: 0.85em;
+    cursor: pointer;
+    z-index: 999;
+    display: none;
+  }
+
   .estrella-secreta {
     position: fixed;
     width: 26px;
@@ -294,7 +313,7 @@
 
   <div id="galaxia">
     <canvas id="lienzo"></canvas>
-    <p id="titulo-galaxia">Toca y desliza por la pantalla 💜</p>
+    <p id="titulo-galaxia">Mueve el dedo o gira tu teléfono 💜</p>
   </div>
 
   <button id="botonMusica" aria-label="Reproducir canción">
@@ -302,6 +321,7 @@
   </button>
 
   <button id="botonReiniciar" aria-label="Reiniciar experiencia">Reiniciar ✨</button>
+  <button id="botonGiroscopio" aria-label="Activar giroscopio">Activar giroscopio 🌀</button>
 
   <div id="contenedorEstrellas"></div>
 
@@ -463,10 +483,13 @@
   const ESCALA = 260;
   const NUM_BRAZOS = 4;
   const B = 0.28;
-  const NUM_PARTICULAS = ES_MOVIL ? 3800 : 9000;
-  const NUM_ESTRELLAS_BRILLANTES = ES_MOVIL ? 80 : 160;
-  const NUM_CAMPO_ESTRELLAS = ES_MOVIL ? 1000 : 2200;
-  const NUM_NEBULOSAS = ES_MOVIL ? 12 : 20;
+  const NUM_PARTICULAS = ES_MOVIL ? 4200 : 9500;
+  const NUM_ESTRELLAS_BRILLANTES = ES_MOVIL ? 90 : 170;
+  const NUM_CAMPO_ESTRELLAS = ES_MOVIL ? 2600 : 5200;
+  const NUM_CAMPO_LEJANO = ES_MOVIL ? 1400 : 2800;
+  const NUM_NEBULOSAS = ES_MOVIL ? 14 : 22;
+  const NUM_NEBULOSAS_LEJANAS = ES_MOVIL ? 10 : 18;
+  const NUM_GALAXIAS_LEJANAS = ES_MOVIL ? 5 : 8;
 
   function crearTexturaGlow() {
     const cv = document.createElement('canvas');
@@ -478,6 +501,20 @@
     grad.addColorStop(1, 'rgba(255,255,255,0)');
     c.fillStyle = grad;
     c.fillRect(0, 0, 64, 64);
+    return new THREE.CanvasTexture(cv);
+  }
+
+  function crearTexturaGalaxiaLejana() {
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 128;
+    const c = cv.getContext('2d');
+    const grad = c.createRadialGradient(64, 64, 0, 64, 64, 64);
+    grad.addColorStop(0, 'rgba(255,255,255,1)');
+    grad.addColorStop(0.25, 'rgba(255,255,255,0.55)');
+    grad.addColorStop(0.55, 'rgba(255,255,255,0.18)');
+    grad.addColorStop(1, 'rgba(255,255,255,0)');
+    c.fillStyle = grad;
+    c.fillRect(0, 0, 128, 128);
     return new THREE.CanvasTexture(cv);
   }
 
@@ -559,18 +596,20 @@
     return new THREE.Points(geo, mat);
   }
 
-  function crearCampoEstrellas(textura) {
-    const posiciones = new Float32Array(NUM_CAMPO_ESTRELLAS * 3);
-    const colores = new Float32Array(NUM_CAMPO_ESTRELLAS * 3);
-    for (let i = 0; i < NUM_CAMPO_ESTRELLAS; i++) {
-      const [x, y, z] = posEnEsfera(700, 1900);
+  function crearCampoEstrellas(textura, cantidad, radioMin, radioMax, tam, opacidadBase) {
+    const posiciones = new Float32Array(cantidad * 3);
+    const colores = new Float32Array(cantidad * 3);
+    for (let i = 0; i < cantidad; i++) {
+      const [x, y, z] = posEnEsfera(radioMin, radioMax);
       posiciones[i * 3] = x;
       posiciones[i * 3 + 1] = y;
       posiciones[i * 3 + 2] = z;
       const r = Math.random();
       let color = [1, 1, 1];
-      if (r < 0.1) color = [1, 0.86, 0.7];
-      else if (r < 0.2) color = [0.74, 0.82, 1];
+      if (r < 0.12) color = [1, 0.84, 0.65];
+      else if (r < 0.26) color = [0.72, 0.8, 1];
+      else if (r < 0.36) color = [1, 0.72, 0.88];
+      else if (r < 0.44) color = [0.8, 0.68, 1];
       colores[i * 3] = color[0];
       colores[i * 3 + 1] = color[1];
       colores[i * 3 + 2] = color[2];
@@ -580,20 +619,75 @@
     geo.setAttribute('color', new THREE.BufferAttribute(colores, 3));
     geo.computeBoundingSphere();
     const mat = new THREE.PointsMaterial({
-      size: 2.2,
+      size: tam,
       map: textura,
       vertexColors: true,
       transparent: true,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
       sizeAttenuation: true,
-      opacity: 0.85
+      opacity: opacidadBase
     });
     return new THREE.Points(geo, mat);
   }
 
+  function crearNebulosasLejanas(textura, cantidad) {
+    const grupo = new THREE.Group();
+    const paleta = [0xff9bd6, 0xa06bff, 0x6bc8ff, 0xffd28f, 0xd68bff, 0x7bffe0];
+    for (let i = 0; i < cantidad; i++) {
+      const [x, y, z] = posEnEsfera(900, 1850);
+      const color = paleta[i % paleta.length];
+      const spr = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: textura, color, transparent: true,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+        opacity: 0.10 + Math.random() * 0.10
+      }));
+      spr.position.set(x, y, z);
+      const escalaSpr = ESCALA * (1.4 + Math.random() * 2.2);
+      spr.scale.set(escalaSpr, escalaSpr * (0.6 + Math.random() * 0.5), 1);
+      spr.userData.fase = Math.random() * Math.PI * 2;
+      spr.userData.opacidadBase = spr.material.opacity;
+      grupo.add(spr);
+    }
+    return grupo;
+  }
+
+  function crearGalaxiasLejanas(textura, cantidad) {
+    const grupo = new THREE.Group();
+    const paleta = [0xd8c9ff, 0xffd0e8, 0xc7e0ff, 0xffe6c2, 0xe0c2ff];
+    for (let i = 0; i < cantidad; i++) {
+      const [x, y, z] = posEnEsfera(1100, 2200);
+      const color = paleta[i % paleta.length];
+      const contenedor = new THREE.Object3D();
+      contenedor.position.set(x, y, z);
+      contenedor.rotation.z = Math.random() * Math.PI * 2;
+      contenedor.rotation.x = Math.random() * Math.PI * 2;
+
+      const disco = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: textura, color, transparent: true,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+        opacity: 0.22 + Math.random() * 0.18
+      }));
+      const tam = ESCALA * (0.55 + Math.random() * 0.75);
+      disco.scale.set(tam, tam * 0.32, 1);
+      contenedor.add(disco);
+
+      const nucleo = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: textura, color: 0xffffff, transparent: true,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+        opacity: 0.5
+      }));
+      nucleo.scale.set(tam * 0.22, tam * 0.22, 1);
+      contenedor.add(nucleo);
+
+      contenedor.userData.velRot = (Math.random() - 0.5) * 0.0004;
+      grupo.add(contenedor);
+    }
+    return grupo;
+  }
+
   let escena, camara, renderizador;
-  let grupoGalaxia, campoEstrellas;
+  let grupoGalaxia, campoEstrellas, campoLejano, nebulosasLejanasGrupo, galaxiasLejanasGrupo;
   const nebulosas = [];
   const meteoros3D = [];
 
@@ -606,9 +700,9 @@
   function iniciarUniverso3D() {
     escena = new THREE.Scene();
     escena.background = new THREE.Color(0x000000);
-    escena.fog = new THREE.FogExp2(0x05020a, 0.0009);
+    escena.fog = new THREE.FogExp2(0x05020a, 0.0006);
 
-    camara = new THREE.PerspectiveCamera(58, W / H, 1, 4000);
+    camara = new THREE.PerspectiveCamera(58, W / H, 1, 5000);
     distanciaCamara = ESCALA * 2.3;
 
     renderizador = new THREE.WebGLRenderer({
@@ -620,6 +714,7 @@
     renderizador.setPixelRatio(Math.min(window.devicePixelRatio || 1, ES_MOVIL ? 1.5 : 2));
 
     const texturaGlow = crearTexturaGlow();
+    const texturaGalaxiaLejana = crearTexturaGalaxiaLejana();
 
     grupoGalaxia = new THREE.Group();
 
@@ -663,8 +758,17 @@
 
     escena.add(grupoGalaxia);
 
-    campoEstrellas = crearCampoEstrellas(texturaGlow);
+    campoEstrellas = crearCampoEstrellas(texturaGlow, NUM_CAMPO_ESTRELLAS, 650, 1600, 2.2, 0.9);
     escena.add(campoEstrellas);
+
+    campoLejano = crearCampoEstrellas(texturaGlow, NUM_CAMPO_LEJANO, 1600, 2600, 1.4, 0.55);
+    escena.add(campoLejano);
+
+    nebulosasLejanasGrupo = crearNebulosasLejanas(texturaGlow, NUM_NEBULOSAS_LEJANAS);
+    escena.add(nebulosasLejanasGrupo);
+
+    galaxiasLejanasGrupo = crearGalaxiasLejanas(texturaGalaxiaLejana, NUM_GALAXIAS_LEJANAS);
+    escena.add(galaxiasLejanasGrupo);
   }
 
   iniciarUniverso3D();
@@ -681,16 +785,72 @@
   }
   window.addEventListener('resize', alRedimensionar);
 
+  let arrastrando = false;
+  let ultimoPX = 0, ultimoPY = 0;
+  const SENS_ARRASTRE = 0.006;
+
+  canvas.addEventListener('pointerdown', (e) => {
+    arrastrando = true;
+    ultimoPX = e.clientX;
+    ultimoPY = e.clientY;
+  });
+
+  window.addEventListener('pointermove', (e) => {
+    if (!arrastrando || giroscopioActivo) return;
+    const dx = e.clientX - ultimoPX;
+    const dy = e.clientY - ultimoPY;
+    ultimoPX = e.clientX;
+    ultimoPY = e.clientY;
+    anguloObjetivo -= dx * SENS_ARRASTRE;
+    elevacionObjetivo += dy * SENS_ARRASTRE;
+    elevacionObjetivo = Math.max(0.12, Math.min(0.9, elevacionObjetivo));
+  });
+
+  window.addEventListener('pointerup', () => { arrastrando = false; });
+  window.addEventListener('pointercancel', () => { arrastrando = false; });
+
   window.addEventListener('mousemove', (e) => {
+    if (arrastrando || giroscopioActivo || ES_MOVIL) return;
     const nx = (e.clientX / W) * 2 - 1;
     const ny = (e.clientY / H) * 2 - 1;
-    anguloObjetivo = 0.7 + nx * 0.7;
-    elevacionObjetivo = 0.5 + ny * 0.25;
+    anguloObjetivo = 0.7 + nx * 0.5;
+    elevacionObjetivo = 0.5 + ny * 0.18;
   }, { passive: true });
 
+  let giroscopioActivo = false;
+  let giroBase = null;
+  const botonGiroscopio = document.getElementById('botonGiroscopio');
+
+  function manejarOrientacion(e) {
+    if (e.beta === null || e.gamma === null) return;
+    if (giroBase === null) giroBase = { beta: e.beta, gamma: e.gamma };
+    const dBeta = e.beta - giroBase.beta;
+    const dGamma = e.gamma - giroBase.gamma;
+    anguloObjetivo = 0.7 - dGamma * 0.02;
+    elevacionObjetivo = Math.max(0.12, Math.min(0.9, 0.5 + dBeta * 0.012));
+  }
+
+  function activarGiroscopio() {
+    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+      DeviceOrientationEvent.requestPermission().then(estado => {
+        if (estado === 'granted') {
+          window.addEventListener('deviceorientation', manejarOrientacion);
+          giroscopioActivo = true;
+          botonGiroscopio.style.display = 'none';
+        }
+      }).catch(() => {});
+    } else if (window.DeviceOrientationEvent) {
+      window.addEventListener('deviceorientation', manejarOrientacion);
+      giroscopioActivo = true;
+      botonGiroscopio.style.display = 'none';
+    }
+  }
+
+  botonGiroscopio.addEventListener('click', activarGiroscopio);
+
   function actualizarCamara() {
-    anguloCamara += (anguloObjetivo - anguloCamara) * 0.025;
-    elevacionCamara += (elevacionObjetivo - elevacionCamara) * 0.025;
+    anguloCamara += (anguloObjetivo - anguloCamara) * 0.05;
+    elevacionCamara += (elevacionObjetivo - elevacionCamara) * 0.05;
     const elevClamp = Math.max(0.12, Math.min(0.9, elevacionCamara));
     camara.position.x = Math.sin(anguloCamara) * distanciaCamara * Math.cos(elevClamp);
     camara.position.z = Math.cos(anguloCamara) * distanciaCamara * Math.cos(elevClamp);
@@ -699,34 +859,36 @@
   }
 
   function lanzarMeteoro3D() {
-    const radioSpawn = ESCALA * (1.6 + Math.random() * 0.8);
+    const radioSpawn = ESCALA * (1.6 + Math.random() * 0.9);
     const anguloSpawn = Math.random() * Math.PI * 2;
-    const alturaSpawn = ESCALA * (0.6 + Math.random() * 0.8);
+    const alturaSpawn = ESCALA * (0.6 + Math.random() * 0.9);
     const inicioPos = new THREE.Vector3(
       Math.cos(anguloSpawn) * radioSpawn,
       alturaSpawn,
       Math.sin(anguloSpawn) * radioSpawn
     );
     const direccion = new THREE.Vector3(-inicioPos.x, -Math.abs(gauss(ESCALA * 0.3)) - ESCALA * 0.2, -inicioPos.z).normalize();
-    const velocidad = ESCALA * (0.03 + Math.random() * 0.02);
+    const velocidad = ESCALA * (0.035 + Math.random() * 0.025);
+    const colores = [0xffffff, 0xffe3f4, 0xd9c8ff, 0xc8e8ff];
+    const color = colores[Math.floor(Math.random() * colores.length)];
 
     const geo = new THREE.BufferGeometry().setFromPoints([inicioPos.clone(), inicioPos.clone()]);
-    const mat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1, blending: THREE.AdditiveBlending });
+    const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 1, blending: THREE.AdditiveBlending });
     const linea = new THREE.Line(geo, mat);
     escena.add(linea);
 
-    meteoros3D.push({ linea, geo, mat, pos: inicioPos.clone(), dir: direccion, vel: velocidad, vida: 1, largo: ESCALA * 0.18 });
+    meteoros3D.push({ linea, geo, mat, pos: inicioPos.clone(), dir: direccion, vel: velocidad, vida: 1, largo: ESCALA * 0.22 });
   }
 
   setInterval(() => {
-    if (universoActivo && Math.random() < (ES_MOVIL ? 0.4 : 0.6)) lanzarMeteoro3D();
-  }, ES_MOVIL ? 3400 : 2600);
+    if (universoActivo && Math.random() < (ES_MOVIL ? 0.55 : 0.8)) lanzarMeteoro3D();
+  }, ES_MOVIL ? 2200 : 1600);
 
   function actualizarMeteoros3D() {
     for (let i = meteoros3D.length - 1; i >= 0; i--) {
       const m = meteoros3D[i];
       m.pos.addScaledVector(m.dir, m.vel);
-      m.vida -= 0.014;
+      m.vida -= 0.013;
       const cola = m.pos.clone().addScaledVector(m.dir, -m.largo);
       const posiciones = m.geo.attributes.position;
       posiciones.setXYZ(0, m.pos.x, m.pos.y, m.pos.z);
@@ -757,7 +919,22 @@
       n.material.opacity = 0.4 + Math.sin(tiempo3D * 0.02 + n.userData.fase) * 0.25;
     });
 
-    if (campoEstrellas) campoEstrellas.rotation.y += 0.00005;
+    if (nebulosasLejanasGrupo) {
+      nebulosasLejanasGrupo.rotation.y += 0.00004;
+      nebulosasLejanasGrupo.children.forEach(n => {
+        n.material.opacity = n.userData.opacidadBase + Math.sin(tiempo3D * 0.008 + n.userData.fase) * 0.05;
+      });
+    }
+
+    if (galaxiasLejanasGrupo) {
+      galaxiasLejanasGrupo.children.forEach(g => {
+        g.rotation.z += g.userData.velRot;
+      });
+      galaxiasLejanasGrupo.rotation.y += 0.00003;
+    }
+
+    if (campoEstrellas) campoEstrellas.rotation.y += 0.00006;
+    if (campoLejano) campoLejano.rotation.y += 0.00002;
 
     actualizarMeteoros3D();
     actualizarCamara();
@@ -773,6 +950,12 @@
     animar3D();
     fadeInAudio();
     mostrarEstrellasSecretas();
+
+    if (ES_MOVIL && typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+      botonGiroscopio.style.display = 'block';
+    } else if (ES_MOVIL && window.DeviceOrientationEvent) {
+      activarGiroscopio();
+    }
   });
 
   function vibrarSuave() {
@@ -808,39 +991,44 @@
     document.querySelectorAll('.mensaje, .estrella-cursor').forEach(el => el.remove());
   }
 
-  let ultimoTiempo = 0;
-  document.addEventListener('mousemove', (e) => {
+  let ultimoTiempoMensaje = 0;
+
+  function generarMensajeEnPunto(x, y) {
     if (!galaxia.classList.contains('visible')) return;
     if (document.getElementById('modalFinal').classList.contains('mostrar')) return;
     if (document.getElementById('modalSecreto').classList.contains('mostrar')) return;
 
     const ahora = Date.now();
-    if (ahora - ultimoTiempo < (ES_MOVIL ? 240 : 180)) return;
-    ultimoTiempo = ahora;
+    if (ahora - ultimoTiempoMensaje < (ES_MOVIL ? 220 : 160)) return;
+    ultimoTiempoMensaje = ahora;
 
     const estrellaCursor = document.createElement('div');
     estrellaCursor.className = 'estrella-cursor';
-    estrellaCursor.style.left = e.clientX + 'px';
-    estrellaCursor.style.top = e.clientY + 'px';
+    estrellaCursor.style.left = x + 'px';
+    estrellaCursor.style.top = y + 'px';
     galaxia.appendChild(estrellaCursor);
     setTimeout(() => estrellaCursor.remove(), 1200);
 
     const mensaje = document.createElement('div');
     mensaje.className = 'mensaje';
     mensaje.textContent = siguienteMensaje();
-    mensaje.style.left = (e.clientX + 15) + 'px';
-    mensaje.style.top = (e.clientY - 10) + 'px';
+    mensaje.style.left = (x + 15) + 'px';
+    mensaje.style.top = (y - 10) + 'px';
     galaxia.appendChild(mensaje);
     setTimeout(() => mensaje.remove(), 2500);
 
     if (Math.random() < 0.2) vibrarSuave();
     revisarFinal();
+  }
+
+  window.addEventListener('mousemove', (e) => {
+    if (ES_MOVIL) return;
+    generarMensajeEnPunto(e.clientX, e.clientY);
   }, { passive: true });
 
-  document.addEventListener('touchmove', (e) => {
-    if (!galaxia.classList.contains('visible')) return;
-    const touch = e.touches[0];
-    document.dispatchEvent(new MouseEvent('mousemove', { clientX: touch.clientX, clientY: touch.clientY }));
+  canvas.addEventListener('pointermove', (e) => {
+    if (!ES_MOVIL) return;
+    generarMensajeEnPunto(e.clientX, e.clientY);
   }, { passive: true });
 
   const modalSecreto = document.getElementById('modalSecreto');
