@@ -2,9 +2,17 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Un Universo Para Ti</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    touch-action: none;
+    overscroll-behavior: none;
+    height: 100%;
+    width: 100%;
+  }
 
   body {
     background: #000;
@@ -110,6 +118,8 @@
     pointer-events: none;
     animation: aparecerEstrella 1.2s ease-out forwards;
     z-index: 3;
+    will-change: transform, opacity;
+    backface-visibility: hidden;
   }
 
   @keyframes aparecerEstrella {
@@ -127,6 +137,8 @@
     pointer-events: none;
     animation: subirMensaje 2.5s ease-out forwards, brillarTexto 0.9s ease-in-out infinite alternate;
     z-index: 3;
+    will-change: transform, opacity;
+    backface-visibility: hidden;
   }
 
   @keyframes brillarTexto {
@@ -789,11 +801,14 @@
   let ultimoPX = 0, ultimoPY = 0;
   const SENS_ARRASTRE = 0.006;
 
+  canvas.style.touchAction = 'none';
+
   canvas.addEventListener('pointerdown', (e) => {
     arrastrando = true;
     ultimoPX = e.clientX;
     ultimoPY = e.clientY;
-  });
+    e.preventDefault();
+  }, { passive: false });
 
   window.addEventListener('pointermove', (e) => {
     if (!arrastrando || giroscopioActivo) return;
@@ -804,7 +819,8 @@
     anguloObjetivo -= dx * SENS_ARRASTRE;
     elevacionObjetivo += dy * SENS_ARRASTRE;
     elevacionObjetivo = Math.max(0.12, Math.min(0.9, elevacionObjetivo));
-  });
+    e.preventDefault();
+  }, { passive: false });
 
   window.addEventListener('pointerup', () => { arrastrando = false; });
   window.addEventListener('pointercancel', () => { arrastrando = false; });
@@ -983,12 +999,45 @@
   document.getElementById('botonReiniciarFinal').addEventListener('click', reiniciarExperiencia);
   document.getElementById('botonReiniciar').addEventListener('click', reiniciarExperiencia);
 
+  // --- Pool de elementos reciclados (evita crear/destruir nodos del DOM) ---
+  const TAM_POOL_MENSAJES = 16;
+  const TAM_POOL_ESTRELLAS = 10;
+
+  const poolMensajes = [];
+  const poolEstrellas = [];
+
+  for (let i = 0; i < TAM_POOL_MENSAJES; i++) {
+    const el = document.createElement('div');
+    el.className = 'mensaje';
+    el.style.display = 'none';
+    galaxia.appendChild(el);
+    poolMensajes.push(el);
+  }
+
+  for (let i = 0; i < TAM_POOL_ESTRELLAS; i++) {
+    const el = document.createElement('div');
+    el.className = 'estrella-cursor';
+    el.style.display = 'none';
+    galaxia.appendChild(el);
+    poolEstrellas.push(el);
+  }
+
+  let indiceMensaje = 0;
+  let indiceEstrella = 0;
+
+  function reiniciarAnimacion(el) {
+    el.style.animation = 'none';
+    void el.offsetWidth; // fuerza reflow, sin esto la animación no vuelve a correr
+    el.style.animation = '';
+  }
+
   function reiniciarExperiencia() {
     document.getElementById('modalFinal').classList.remove('mostrar');
     document.getElementById('modalSecreto').classList.remove('mostrar');
     contadorToques = 0;
     finalMostrado = false;
-    document.querySelectorAll('.mensaje, .estrella-cursor').forEach(el => el.remove());
+    poolMensajes.forEach(el => { el.style.display = 'none'; });
+    poolEstrellas.forEach(el => { el.style.display = 'none'; });
   }
 
   let ultimoTiempoMensaje = 0;
@@ -1002,20 +1051,22 @@
     if (ahora - ultimoTiempoMensaje < (ES_MOVIL ? 220 : 160)) return;
     ultimoTiempoMensaje = ahora;
 
-    const estrellaCursor = document.createElement('div');
-    estrellaCursor.className = 'estrella-cursor';
+    // estrella del cursor (reciclada del pool)
+    const estrellaCursor = poolEstrellas[indiceEstrella];
+    indiceEstrella = (indiceEstrella + 1) % TAM_POOL_ESTRELLAS;
+    estrellaCursor.style.display = 'block';
     estrellaCursor.style.left = x + 'px';
     estrellaCursor.style.top = y + 'px';
-    galaxia.appendChild(estrellaCursor);
-    setTimeout(() => estrellaCursor.remove(), 1200);
+    reiniciarAnimacion(estrellaCursor);
 
-    const mensaje = document.createElement('div');
-    mensaje.className = 'mensaje';
+    // mensaje (reciclado del pool)
+    const mensaje = poolMensajes[indiceMensaje];
+    indiceMensaje = (indiceMensaje + 1) % TAM_POOL_MENSAJES;
     mensaje.textContent = siguienteMensaje();
+    mensaje.style.display = 'block';
     mensaje.style.left = (x + 15) + 'px';
     mensaje.style.top = (y - 10) + 'px';
-    galaxia.appendChild(mensaje);
-    setTimeout(() => mensaje.remove(), 2500);
+    reiniciarAnimacion(mensaje);
 
     if (Math.random() < 0.2) vibrarSuave();
     revisarFinal();
